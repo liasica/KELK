@@ -1,0 +1,119 @@
+version: '3.8'
+
+networks:
+  kelknet:
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.6.0
+    container_name: kelk-es
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - http.port=9200
+      - http.cors.allow-origin=http://localhost:1358,http://127.0.0.1:1358
+      - http.cors.enabled=true
+      - http.cors.allow-headers=X-Requested-With,X-Auth-Token,Content-Type,Content-Length,Authorization
+      - http.cors.allow-credentials=true
+    ulimits:
+      nproc: 65535
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65535
+        hard: 65535
+    ports:
+      - 9200:9200
+    volumes:
+      - ./data/elastichsearch:/usr/share/elasticsearch/data
+    networks:
+      - kelknet
+
+  dejavu:
+    image: appbaseio/dejavu:latest
+    container_name: kelk-dejavu
+    restart: unless-stopped
+    ports:
+      - 1358:1358
+    networks:
+      - kelknet
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.6.0
+    container_name: kelk-kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    ports:
+      - 5601:5601
+    volumes:
+      - ./data/kibana:/usr/share/kibana/data
+    networks:
+      - kelknet
+    depends_on:
+      - elasticsearch
+
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    container_name: kelk-zookeeper
+    restart: unless-stopped
+    ports:
+      - 2181:2181
+    volumes:
+      - ./data/zookeeper:/bitnami/zookeeper
+    networks:
+      - kelknet
+
+  kafka:
+    image: bitnami/kafka:latest
+    container_name: kelk-kafka
+    restart: unless-stopped
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,PLAINTEXT_HOST://:29092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+    ports:
+      - 2181:2181
+    volumes:
+      - ./data/kafka:/bitnami/kafka
+    networks:
+      - kelknet
+    depends_on:
+      - zookeeper
+    
+  kafkaui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kelk-kafkaui
+    restart: unless-stopped
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+    ports:
+      - 2280:8080
+    networks:
+      - kelknet
+    depends_on:
+      - kafka
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.6.0
+    container_name: kelk-logstash
+    restart: unless-stopped
+    environment:
+      - LS_JAVA_OPTS=-Xmx256m -Xms256m
+    ports:
+      - 9600:9600
+    volumes:
+      - ./data/pipeline:/usr/share/logstash/pipeline
+    networks:
+      - kelknet
+    depends_on:
+      - elasticsearch
+      - kafka
+  
